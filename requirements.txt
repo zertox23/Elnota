@@ -2,6 +2,3 @@ numpy
 streamlit
 pandas
 sqlite3
-panda
-pd
-np

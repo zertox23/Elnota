@@ -1,7 +1,8 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-
+from thefuzz import fuzz
+from pprint import pprint
 
 
 class DB:
@@ -21,19 +22,30 @@ class DB:
         """
         self.cr.execute(Query)
         self.db.commit()
+        Query2 = """
+        CREATE TABLE if not exists
+        Elnota (
+        id integer not null primary key autoincrement,
+        created_at datetime not null default CURRENT_TIMESTAMP,
+        Note varchar(255) null,
+        title varchar(255) null,
+        rating INT null)
+        """
 
     def newnote(self, note: str, title: str, rating: int):
         Query = """
         insert into Elnota (note, title, rating)values('%s','%s','%s')
         """ % (
-            note,
-            title,
+            note.strip(),
+            title.strip(),
             rating,
         )
         self.cr.execute(Query)
         self.db.commit()
 
-    def update_rating(self, rating: int, note: str = None, title: str = None):
+    def update_rating(
+        self, rating: int, note: str | None = None, title: str | None = None
+    ):
         if type(rating) == int:
             if type(note) == None and type(title) == None:
                 return False
@@ -78,10 +90,43 @@ class DB:
         return df
 
     def delete(self, id):
-        query = f"""DELETE FROM Elnota WHERE id='{id}'"""
+        query = "DELETE FROM Elnota WHERE id='%s'" % id
         print(query)
         self.cr.execute(query)
         self.db.commit()
+
+    def search(self, search_term):
+        query = "SELECT title FROM Elnota"
+        res = self.cr.execute(query).fetchall()
+        result = dict(
+            sorted(
+                {
+                    str(x[0]).strip(): fuzz.ratio(
+                        str(search_term).lower(), str(x[0]).lower().strip()
+                    )
+                    for x in res
+                }.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        )
+        keys = list(result.keys())
+        first_half_keys = keys[: len(keys) // 2]
+        res = []
+        for i in first_half_keys:
+            print(i)
+            query = "SELECT * from Elnota where title = '%s'" % i
+            x = self.cr.execute(query).fetchone()
+            if type(x) == tuple:
+                res.append(x)
+            else:
+                pass
+        # pprint(res)
+
+        df = pd.DataFrame(
+            res, columns=["id", "creation_date", "note", "title", "rating"]
+        )
+        return df
 
 
 class APP:
@@ -110,6 +155,8 @@ class APP:
         self.id = st.sidebar.text_input("ID", help="id to delete from the database")
 
         self.delete = st.sidebar.button("Delete", on_click=self.deleteit)
+        self.search_term = st.text_input("Search", help="Search the database by TITLE")
+        self.search_btn = st.button("Search", on_click=self.search)
         self.table = st.table(self.df)
 
     def submit(self):
@@ -119,6 +166,12 @@ class APP:
         if self.id != None:
             print(self.id)
             self.Database.delete(self.id)
+
+    def search(self):
+        if self.search_term:
+            res = self.Database.search(self.search_term)
+            self.table = ""
+            self.table = st.table(res)
 
 
 app = APP()
